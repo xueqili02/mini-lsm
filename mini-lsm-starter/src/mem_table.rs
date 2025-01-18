@@ -2,10 +2,10 @@
 
 use std::ops::Bound;
 use std::path::Path;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Ok, Result};
 use bytes::Bytes;
 use crossbeam_skiplist::SkipMap;
 use ouroboros::self_referencing;
@@ -38,12 +38,22 @@ pub(crate) fn map_bound(bound: Bound<&[u8]>) -> Bound<Bytes> {
 impl MemTable {
     /// Create a new mem-table.
     pub fn create(_id: usize) -> Self {
-        unimplemented!()
+        MemTable {
+            map: Arc::new(SkipMap::new()),
+            wal: None,
+            id: _id,
+            approximate_size: Arc::new(AtomicUsize::new(0)),
+        }
     }
 
     /// Create a new mem-table with WAL
     pub fn create_with_wal(_id: usize, _path: impl AsRef<Path>) -> Result<Self> {
-        unimplemented!()
+        Ok(MemTable {
+            map: Arc::new(SkipMap::new()),
+            wal: Some(Wal::create(_path).unwrap()),
+            id: _id,
+            approximate_size: Arc::new(AtomicUsize::new(0)),
+        })
     }
 
     /// Create a memtable from WAL
@@ -69,7 +79,10 @@ impl MemTable {
 
     /// Get a value by key.
     pub fn get(&self, _key: &[u8]) -> Option<Bytes> {
-        unimplemented!()
+        match self.map.get(_key) {
+            Some(entry) => Some(entry.value().clone()),
+            None => None,
+        }
     }
 
     /// Put a key-value pair into the mem-table.
@@ -78,7 +91,11 @@ impl MemTable {
     /// In week 2, day 6, also flush the data to WAL.
     /// In week 3, day 5, modify the function to use the batch API.
     pub fn put(&self, _key: &[u8], _value: &[u8]) -> Result<()> {
-        unimplemented!()
+        self.map
+            .insert(Bytes::copy_from_slice(_key), Bytes::copy_from_slice(_value));
+        self.approximate_size
+            .fetch_add(_key.len() + _value.len(), Ordering::Relaxed);
+        Ok(())
     }
 
     /// Implement this in week 3, day 5.
