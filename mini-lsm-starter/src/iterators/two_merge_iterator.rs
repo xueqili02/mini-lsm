@@ -25,6 +25,7 @@ pub struct TwoMergeIterator<A: StorageIterator, B: StorageIterator> {
     a: A,
     b: B,
     // Add fields as need
+    use_a: bool,
 }
 
 impl<
@@ -32,8 +33,38 @@ impl<
     B: 'static + for<'a> StorageIterator<KeyType<'a> = A::KeyType<'a>>,
 > TwoMergeIterator<A, B>
 {
+    fn choose_a(a: &A, b: &B) -> bool {
+        if !a.is_valid() {
+            return false;
+        }
+
+        if !b.is_valid() {
+            return true;
+        }
+
+        a.key() < b.key()
+    }
+
+    fn skip_b(&mut self) -> Result<()> {
+        if self.a.is_valid() {
+            if self.b.is_valid() && self.b.key() == self.a.key() {
+                self.b.next()?;
+            }
+        }
+        Ok(())
+    }
+
     pub fn create(a: A, b: B) -> Result<Self> {
-        unimplemented!()
+        let mut iter = Self {
+            a: a,
+            b: b,
+            use_a: false,
+        };
+
+        iter.skip_b()?;
+        iter.use_a = Self::choose_a(&iter.a, &iter.b);
+
+        Ok(iter)
     }
 }
 
@@ -45,18 +76,41 @@ impl<
     type KeyType<'a> = A::KeyType<'a>;
 
     fn key(&self) -> Self::KeyType<'_> {
-        unimplemented!()
+        if self.use_a {
+            return self.a.key();
+        } else {
+            return self.b.key();
+        }
     }
 
     fn value(&self) -> &[u8] {
-        unimplemented!()
+        if self.use_a {
+            return self.a.value();
+        } else {
+            return self.b.value();
+        }
     }
 
     fn is_valid(&self) -> bool {
-        unimplemented!()
+        if self.use_a {
+            return self.a.is_valid();
+        } else {
+            return self.b.is_valid();
+        }
     }
 
     fn next(&mut self) -> Result<()> {
-        unimplemented!()
+        if self.use_a {
+            self.a.next()?;
+        } else {
+            self.b.next()?;
+        }
+        self.skip_b()?;
+        self.use_a = Self::choose_a(&self.a, &self.b);
+        Ok(())
+    }
+
+    fn num_active_iterators(&self) -> usize {
+        self.a.num_active_iterators() + self.b.num_active_iterators()
     }
 }
